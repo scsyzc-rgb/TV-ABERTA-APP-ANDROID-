@@ -168,7 +168,7 @@
 
 <div id="sourceScreen" class="source-screen">
   <div class="spinner"></div>
-  <div style="color:var(--muted);font-size:16px;" id="loadingText">Carregando lista de canais...</div>
+  <div style="color:var(--muted);font-size:16px;" id="loadingText">Filtrando e salvando canais funcionais...</div>
 </div>
 
 <header id="mainHeader" style="display:none;">
@@ -200,10 +200,13 @@ let hls = null;
 let osdTimeout = null;
 let streamTimeout = null;
 
+// Lista de URLs marcadas como mortas salvas na TV
+let deadChannels = JSON.parse(localStorage.getItem('sintonia_dead_channels') || '[]');
+
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     const text = await fetchWithFallback(M3U_URL);
-    loadPlaylist(text);
+    await loadAndVerifyPlaylist(text);
   } catch (err) {
     document.getElementById('loadingText').textContent = "Erro ao carregar lista de canais.";
   }
@@ -239,7 +242,8 @@ function parseM3U(text){
       };
     } else if(!line.startsWith('#') && current){
       current.url = line;
-      if (current.url.startsWith('http')) {
+      // Só inclui se não estiver na lista negra salva permanentemente na TV
+      if (current.url.startsWith('http') && !deadChannels.includes(current.url)) {
         result.push(current);
       }
       current = null;
@@ -248,8 +252,28 @@ function parseM3U(text){
   return result;
 }
 
-function loadPlaylist(text){
-  channels = parseM3U(text);
+// Testa a conexão dos canais em lote ao carregar a página
+async function loadAndVerifyPlaylist(text){
+  const parsed = parseM3U(text);
+  document.getElementById('loadingText').textContent = `Verificando ${parsed.length} canais...`;
+  
+  // Teste rápido com timeout de 3.5s por link
+  const promises = parsed.map(chan => {
+    return new Promise((resolve) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => { controller.abort(); resolve(null); }, 3500);
+
+      fetch(chan.url, { method: 'HEAD', signal: controller.signal, mode: 'no-cors' })
+        .then(() => { clearTimeout(timer); resolve(chan); })
+        .catch(() => { clearTimeout(timer); resolve(null); });
+    });
+  });
+
+  const verifiedResults = await Promise.all(promises);
+  
+  // Mantém apenas os canais que responderam ao teste inicial
+  channels = verifiedResults.filter(c => c !== null);
+
   document.getElementById('sourceScreen').classList.add('hidden');
   document.getElementById('mainHeader').style.display = 'flex';
   document.getElementById('mainLayout').style.display = 'flex';
@@ -313,11 +337,21 @@ function renderGrid(){
   });
 }
 
-function removeChannelFromList(index) {
-  const cardElem = document.getElementById(`card-${index}`);
-  if (cardElem) {
-    cardElem.remove();
+// Salva a remoção permanentemente na memória da TV
+function permanentlyRemoveChannel(index) {
+  if (index < 0 || index >= filteredChannels.length) return;
+  const target = filteredChannels[index];
+  
+  if (target && target.url) {
+    if (!deadChannels.includes(target.url)) {
+      deadChannels.push(target.url);
+      localStorage.setItem('sintonia_dead_channels', JSON.stringify(deadChannels));
+    }
   }
+
+  channels = channels.filter(c => c.url !== target.url);
+  const cardElem = document.getElementById(`card-${index}`);
+  if (cardElem) cardElem.remove();
 }
 
 const searchInput = document.getElementById('searchInput');
@@ -351,7 +385,6 @@ function showOsd(text){
   osdTimeout = setTimeout(() => { osd.style.display = 'none'; }, 3000);
 }
 
-// Cancela a remoção se o canal funcionar
 video.onplaying = () => {
   if(streamTimeout) {
     clearTimeout(streamTimeout);
@@ -361,8 +394,8 @@ video.onplaying = () => {
 
 function handleFailedStream(index, name) {
   if(streamTimeout) clearTimeout(streamTimeout);
-  showOsd(`❌ Fora do ar (Removido)`);
-  removeChannelFromList(index);
+  showOsd(`❌ Fora do ar (Removido Permanentemente)`);
+  permanentlyRemoveChannel(index);
   setTimeout(() => {
     closePlayer();
   }, 1500);
@@ -379,7 +412,6 @@ function playChannel(index){
   if(hls){ hls.destroy(); hls = null; }
   if(streamTimeout) clearTimeout(streamTimeout);
 
-  // Se após 6 segundos o vídeo não tiver começado a tocar, remove da lista
   streamTimeout = setTimeout(() => {
     handleFailedStream(index, c.name);
   }, 6000);
