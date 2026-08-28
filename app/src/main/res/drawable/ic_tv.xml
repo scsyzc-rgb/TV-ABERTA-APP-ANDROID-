@@ -1,0 +1,93 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Fundo Escuro -->
+    <path
+        android:pathData="M 110,0 L 402,0 A 110,110 0 0 1 512,110 L 512,402 A 110,110 0 0 1 402,512 L 110,512 A 110,110 0 0 1 0,402 L 0,110 A 110,110 0 0 1 110,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="512"
+                android:endY="512"
+                android:type="linear">
+                <item android:color="#FF12151B" android:offset="0.0"/>
+                <item android:color="#FF0A0C10" android:offset="1.0"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Antenas da TV -->
+    <path
+        android:pathData="M 180,130 L 235,185 M 332,130 L 277,185"
+        android:strokeWidth="16"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="512"
+                android:endY="512"
+                android:type="linear">
+                <item android:color="#FF00D9FF" android:offset="0.0"/>
+                <item android:color="#FF0077FF" android:offset="1.0"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Moldura Externa da TV -->
+    <path
+        android:pathData="M 114,185 L 398,185 A 28,28 0 0 1 426,213 L 426,387 A 28,28 0 0 1 398,415 L 114,415 A 28,28 0 0 1 86,387 L 86,213 A 28,28 0 0 1 114,185 Z"
+        android:strokeWidth="18">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="512"
+                android:endY="512"
+                android:type="linear">
+                <item android:color="#FF00D9FF" android:offset="0.0"/>
+                <item android:color="#FF0077FF" android:offset="1.0"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Play/Símbolo Central -->
+    <path
+        android:pathData="M 230,250 L 305,295 L 230,340 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="512"
+                android:endY="512"
+                android:type="linear">
+                <item android:color="#FF00D9FF" android:offset="0.0"/>
+                <item android:color="#FF0077FF" android:offset="1.0"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Pés da TV -->
+    <path
+        android:pathData="M 160,415 L 130,450 M 352,415 L 382,450"
+        android:strokeWidth="16"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="512"
+                android:endY="512"
+                android:type="linear">
+                <item android:color="#FF00D9FF" android:offset="0.0"/>
+                <item android:color="#FF0077FF" android:offset="1.0"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+</vector>
