@@ -4,7 +4,7 @@
     <application
         android:theme="@style/AppTheme"
         android:label="TV Aberta"
-        android:icon="@android:drawable/ic_menu_tv"
+        android:icon="@android:drawable/sym_def_app_icon"
         android:usesCleartextTraffic="true"
         android:resizeableActivity="true">
         <activity
