@@ -5,7 +5,6 @@
         android:theme="@style/AppTheme"
         android:label="TV Aberta"
         android:icon="@android:drawable/ic_menu_tv"
-        android:banner="@android:drawable/ic_menu_tv"
         android:usesCleartextTraffic="true"
         android:resizeableActivity="true">
         <activity
