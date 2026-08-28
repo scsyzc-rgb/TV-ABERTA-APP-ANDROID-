@@ -168,7 +168,7 @@
 
 <div id="sourceScreen" class="source-screen">
   <div class="spinner"></div>
-  <div style="color:var(--muted);font-size:16px;" id="loadingText">Carregando e verificando canais funcionais...</div>
+  <div style="color:var(--muted);font-size:16px;" id="loadingText">Carregando lista de canais...</div>
 </div>
 
 <header id="mainHeader" style="display:none;">
@@ -198,6 +198,7 @@ let currentChannelIndex = -1;
 let activeCategory = "TODOS";
 let hls = null;
 let osdTimeout = null;
+let streamTimeout = null;
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -315,7 +316,7 @@ function renderGrid(){
 function removeChannelFromList(index) {
   const cardElem = document.getElementById(`card-${index}`);
   if (cardElem) {
-    cardElem.remove(); // Remove o card visualmente da tela
+    cardElem.remove();
   }
 }
 
@@ -350,6 +351,23 @@ function showOsd(text){
   osdTimeout = setTimeout(() => { osd.style.display = 'none'; }, 3000);
 }
 
+// Cancela a remoção se o canal funcionar
+video.onplaying = () => {
+  if(streamTimeout) {
+    clearTimeout(streamTimeout);
+    streamTimeout = null;
+  }
+};
+
+function handleFailedStream(index, name) {
+  if(streamTimeout) clearTimeout(streamTimeout);
+  showOsd(`❌ Fora do ar (Removido)`);
+  removeChannelFromList(index);
+  setTimeout(() => {
+    closePlayer();
+  }, 1500);
+}
+
 function playChannel(index){
   if(index < 0 || index >= filteredChannels.length) return;
   currentChannelIndex = index;
@@ -359,61 +377,49 @@ function playChannel(index){
   showOsd(`📺 ${c.name}`);
 
   if(hls){ hls.destroy(); hls = null; }
+  if(streamTimeout) clearTimeout(streamTimeout);
 
-  // Timeout de 5s: se não rodar, considera fora do ar, apaga o card e fecha o player
-  const streamTimeout = setTimeout(() => {
-    showOsd(`❌ Fora do ar (Removido)`);
-    removeChannelFromList(index);
-    setTimeout(() => closePlayer(), 1500);
-  }, 5000);
+  // Se após 6 segundos o vídeo não tiver começado a tocar, remove da lista
+  streamTimeout = setTimeout(() => {
+    handleFailedStream(index, c.name);
+  }, 6000);
 
   if(c.url.includes('.m3u8') && window.Hls && Hls.isSupported()){
-    hls = new Hls({ manifestLoadingTimeOut: 4000 });
+    hls = new Hls({ manifestLoadingTimeOut: 5000 });
     hls.loadSource(c.url);
     hls.attachMedia(video);
     
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      clearTimeout(streamTimeout);
-      video.play().catch(() => {
-        removeChannelFromList(index);
-        closePlayer();
-      });
+      video.play().catch(() => handleFailedStream(index, c.name));
     });
 
     hls.on(Hls.Events.ERROR, (event, data) => {
       if (data.fatal) {
-        clearTimeout(streamTimeout);
-        removeChannelFromList(index);
-        closePlayer();
+        handleFailedStream(index, c.name);
       }
     });
   } else {
     video.src = c.url;
-    video.play().then(() => {
-      clearTimeout(streamTimeout);
-    }).catch(() => {
-      clearTimeout(streamTimeout);
-      removeChannelFromList(index);
-      closePlayer();
-    });
+    video.play().catch(() => handleFailedStream(index, c.name));
   }
 }
 
 function closePlayer(){
+  if(streamTimeout) clearTimeout(streamTimeout);
   overlay.classList.remove('active');
   if(hls){ hls.destroy(); hls = null; }
   video.pause();
   video.removeAttribute('src');
   
   setTimeout(() => {
-    const currentCard = document.querySelector('.chan-card');
-    if(currentCard) firstCardFocus();
+    const currentCard = document.querySelector(`.chan-card[data-index="${currentChannelIndex}"]`);
+    if(currentCard) {
+      currentCard.focus();
+    } else {
+      const firstCard = document.querySelector('.chan-card');
+      if(firstCard) firstCard.focus();
+    }
   }, 100);
-}
-
-function firstCardFocus(){
-  const firstCard = document.querySelector('.chan-card');
-  if(firstCard) firstCard.focus();
 }
 
 document.addEventListener('keydown', (e) => {
