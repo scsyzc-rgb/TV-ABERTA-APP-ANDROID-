@@ -192,7 +192,6 @@
 </div>
 
 <script>
-// Lista global de todos os canais em língua portuguesa (iptv-org por idioma)
 const M3U_URL = "https://iptv-org.github.io/iptv/languages/por.m3u";
 let channels = [];
 let filteredChannels = [];
@@ -200,6 +199,7 @@ let currentChannelIndex = -1;
 let activeCategory = "TODOS";
 let hls = null;
 let osdTimeout = null;
+let loadTimeout = null;
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -240,7 +240,6 @@ function parseM3U(text){
       };
     } else if(!line.startsWith('#') && current){
       current.url = line;
-      // Filtra links que utilizam HTTP/HTTPS válidos
       if(current.url.startsWith('http')) {
         result.push(current);
       }
@@ -259,8 +258,7 @@ function loadPlaylist(text){
   renderGrid();
 
   setTimeout(() => {
-    const firstCard = document.querySelector('.chan-card');
-    if(firstCard) firstCard.focus();
+    focusFirstAvailableCard();
   }, 300);
 }
 
@@ -298,7 +296,7 @@ function renderGrid(){
   filteredChannels.forEach((c, idx) => {
     const card = document.createElement('div');
     card.className = 'chan-card';
-    card.id = `card-chan-${idx}`;
+    card.dataset.index = idx;
     card.tabIndex = 0;
     card.innerHTML = `
       <div class="chan-logo-box">
@@ -314,7 +312,13 @@ function renderGrid(){
   });
 }
 
-// BUSCA FUNCIONAL NO CONTROLE
+function focusFirstAvailableCard() {
+  const visibleCards = Array.from(document.querySelectorAll('.chan-card')).filter(c => c.style.display !== 'none');
+  if (visibleCards.length > 0) {
+    visibleCards[0].focus();
+  }
+}
+
 const searchInput = document.getElementById('searchInput');
 searchInput.addEventListener('input', renderGrid);
 searchInput.addEventListener('keydown', (e) => {
@@ -322,16 +326,12 @@ searchInput.addEventListener('keydown', (e) => {
     e.preventDefault();
     renderGrid();
     searchInput.blur();
-    setTimeout(() => {
-      const firstCard = document.querySelector('.chan-card');
-      if(firstCard) firstCard.focus();
-    }, 100);
+    setTimeout(focusFirstAvailableCard, 100);
   }
   if(e.key === 'ArrowDown' || e.keyCode === 40) {
     e.preventDefault();
     searchInput.blur();
-    const firstCard = document.querySelector('.chan-card');
-    if(firstCard) firstCard.focus();
+    focusFirstAvailableCard();
   }
 });
 
@@ -347,14 +347,18 @@ function showOsd(text){
 }
 
 function markChannelAsDead(index) {
-  const card = document.getElementById(`card-chan-${index}`);
+  if (loadTimeout) clearTimeout(loadTimeout);
+  
+  const card = document.querySelector(`.chan-card[data-index="${index}"]`);
   if (card) {
-    card.style.display = 'none'; // Remove o card da grade automaticamente
+    card.style.display = 'none';
   }
-  showOsd(`❌ Canal fora do ar (Removido da lista)`);
+  
+  showOsd(`❌ Canal fora do ar`);
+  
   setTimeout(() => {
     closePlayer();
-  }, 1500);
+  }, 1200);
 }
 
 function playChannel(index){
@@ -366,56 +370,56 @@ function playChannel(index){
   showOsd(`📺 ${c.name}`);
 
   if(hls){ hls.destroy(); hls = null; }
+  if(loadTimeout) clearTimeout(loadTimeout);
 
-  // Se o canal demorar mais de 6 segundos sem dar resposta, considera fora do ar e esconde da grade
-  let loadTimeout = setTimeout(() => {
+  // Se demorar mais de 5s para iniciar a reprodução, descarta o canal com segurança
+  loadTimeout = setTimeout(() => {
     markChannelAsDead(index);
-  }, 6000);
+  }, 5000);
 
   if(c.url.includes('.m3u8') && window.Hls && Hls.isSupported()){
-    hls = new Hls({ manifestLoadingTimeOut: 5000 });
+    hls = new Hls({ manifestLoadingTimeOut: 4000 });
     hls.loadSource(c.url);
     hls.attachMedia(video);
     
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      clearTimeout(loadTimeout);
-      video.play().catch(() => markChannelAsDead(index));
+      video.play().then(() => {
+        if(loadTimeout) clearTimeout(loadTimeout);
+      }).catch(() => markChannelAsDead(index));
     });
 
     hls.on(Hls.Events.ERROR, (event, data) => {
       if (data.fatal) {
-        clearTimeout(loadTimeout);
         markChannelAsDead(index);
       }
     });
   } else {
     video.src = c.url;
     video.play().then(() => {
-      clearTimeout(loadTimeout);
+      if(loadTimeout) clearTimeout(loadTimeout);
     }).catch(() => {
-      clearTimeout(loadTimeout);
       markChannelAsDead(index);
     });
   }
 }
 
 function closePlayer(){
+  if(loadTimeout) clearTimeout(loadTimeout);
   overlay.classList.remove('active');
   if(hls){ hls.destroy(); hls = null; }
   video.pause();
   video.removeAttribute('src');
   
   setTimeout(() => {
-    const cards = document.querySelectorAll('.chan-card');
-    if(cards[currentChannelIndex] && cards[currentChannelIndex].style.display !== 'none') {
-      cards[currentChannelIndex].focus();
-    } else if(cards[0]) {
-      cards[0].focus();
+    // Tenta focar no próximo canal visível mais próximo
+    const cards = Array.from(document.querySelectorAll('.chan-card')).filter(c => c.style.display !== 'none');
+    if(cards.length > 0) {
+      const targetCard = cards.find(c => parseInt(c.dataset.index) >= currentChannelIndex) || cards[0];
+      targetCard.focus();
     }
   }, 100);
 }
 
-// CONTROLE REMOTO GLOBAL
 document.addEventListener('keydown', (e) => {
   const code = e.keyCode || e.which;
   const isPlayerActive = overlay.classList.contains('active');
