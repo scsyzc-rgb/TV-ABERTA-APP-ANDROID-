@@ -169,7 +169,7 @@
 
 <div id="sourceScreen" class="source-screen">
   <div class="spinner"></div>
-  <div style="color:var(--muted);font-size:16px;" id="loadingText">Carregando TV...</div>
+  <div style="color:var(--muted);font-size:16px;" id="loadingText">Carregando canais em português...</div>
 </div>
 
 <header id="mainHeader" style="display:none;">
@@ -192,13 +192,15 @@
 </div>
 
 <script>
-const M3U_URL = "https://iptv-org.github.io/iptv/countries/br.m3u";
+// Lista de canais abertos brasileiros e de Portugal verificados
+const M3U_URL = "https://iptv-org.github.io/iptv/languages/por.m3u";
 let channels = [];
 let filteredChannels = [];
 let currentChannelIndex = -1;
 let activeCategory = "TODOS";
 let hls = null;
 let osdTimeout = null;
+let loadTimeout = null;
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -297,6 +299,7 @@ function renderGrid(){
   capped.forEach((c, idx) => {
     const card = document.createElement('div');
     card.className = 'chan-card';
+    card.dataset.index = idx;
     card.tabIndex = 0;
     card.innerHTML = `
       <div class="chan-logo-box">
@@ -344,6 +347,15 @@ function showOsd(text){
   osdTimeout = setTimeout(() => { osd.style.display = 'none'; }, 3000);
 }
 
+function handleChannelError(name) {
+  if(loadTimeout) clearTimeout(loadTimeout);
+  showOsd(`❌ Fora do ar: ${name}`);
+  // Fecha o player automaticamente após 2 segundos sem perder o foco do controle
+  setTimeout(() => {
+    closePlayer();
+  }, 2000);
+}
+
 function playChannel(index){
   if(index < 0 || index >= filteredChannels.length) return;
   currentChannelIndex = index;
@@ -353,10 +365,12 @@ function playChannel(index){
   showOsd(`📺 ${c.name}`);
 
   if(hls){ hls.destroy(); hls = null; }
+  if(loadTimeout) clearTimeout(loadTimeout);
 
-  let errorTimeout = setTimeout(() => {
-    showOsd(`⚠️ Canal Off: ${c.name}`);
-  }, 5000);
+  // Se demorar mais de 6s para rodar o vídeo, trata como fora do ar
+  loadTimeout = setTimeout(() => {
+    handleChannelError(c.name);
+  }, 6000);
 
   if(c.url.includes('.m3u8') && window.Hls && Hls.isSupported()){
     hls = new Hls({ manifestLoadingTimeOut: 5000 });
@@ -364,37 +378,41 @@ function playChannel(index){
     hls.attachMedia(video);
     
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      clearTimeout(errorTimeout);
-      video.play().catch(()=>{});
+      video.play().then(() => {
+        if(loadTimeout) clearTimeout(loadTimeout);
+      }).catch(() => handleChannelError(c.name));
     });
 
     hls.on(Hls.Events.ERROR, (event, data) => {
       if (data.fatal) {
-        clearTimeout(errorTimeout);
-        showOsd(`❌ Fora do ar: ${c.name}`);
+        handleChannelError(c.name);
       }
     });
   } else {
     video.src = c.url;
-    video.play().then(() => clearTimeout(errorTimeout)).catch(()=>{
-      clearTimeout(errorTimeout);
-      showOsd(`❌ Fora do ar: ${c.name}`);
+    video.play().then(() => {
+      if(loadTimeout) clearTimeout(loadTimeout);
+    }).catch(() => {
+      handleChannelError(c.name);
     });
   }
 }
 
 function closePlayer(){
+  if(loadTimeout) clearTimeout(loadTimeout);
   overlay.classList.remove('active');
   if(hls){ hls.destroy(); hls = null; }
   video.pause();
   video.removeAttribute('src');
   
   setTimeout(() => {
-    const cards = document.querySelectorAll('.chan-card');
-    if(cards[currentChannelIndex]) {
-      cards[currentChannelIndex].focus();
-    } else if(cards[0]) {
-      cards[0].focus();
+    // Restaura o foco no card do canal atual para poder trocar com o controle
+    const currentCard = document.querySelector(`.chan-card[data-index="${currentChannelIndex}"]`);
+    if(currentCard) {
+      currentCard.focus();
+    } else {
+      const firstCard = document.querySelector('.chan-card');
+      if(firstCard) firstCard.focus();
     }
   }, 100);
 }
