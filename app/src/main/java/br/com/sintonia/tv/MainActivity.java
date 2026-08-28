@@ -2,6 +2,7 @@ package br.com.sintonia.tv;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -24,6 +25,7 @@ public class MainActivity extends Activity {
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN
         );
+
         getWindow().getDecorView().setSystemUiVisibility(
             View.SYSTEM_UI_FLAG_FULLSCREEN
             | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
@@ -40,23 +42,21 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
-        s.setAllowFileAccess(true);
-        s.setAllowContentAccess(true);
-        s.setDatabaseEnabled(true);
-        s.setBuiltInZoomControls(false);
-        s.setDisplayZoomControls(false);
 
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient());
-        webView.setFocusable(true);
-        webView.setFocusableInTouchMode(true);
-        webView.requestFocus(View.FOCUS_DOWN);
+
         webView.loadUrl("file:///android_asset/index.html");
     }
 
     @Override
     public void onBackPressed() {
-        if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        if (webView != null) {
+            // Envia o comando da tecla "ESCAPE" diretamente para o HTML/JavaScript fechar o player
+            webView.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ESCAPE));
+            webView.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ESCAPE));
+        } else {
+            super.onBackPressed();
+        }
     }
 }
