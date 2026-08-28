@@ -4,219 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SINTONIA — Player IPTV</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js">
-/* ===== SINTONIA TV MODE ===== */
-document.documentElement.classList.add('tv-mode');
-
-let tvFocusType = 'source';
-let tvFocusIndex = 0;
-let tvInPlayer = false;
-
-function tvVisible(el) {
-  if (!el) return false;
-  const s = getComputedStyle(el);
-  return s.display !== 'none' && s.visibility !== 'hidden' && el.offsetParent !== null;
-}
-function tvClearFocus() {
-  document.querySelectorAll('.tv-focus').forEach(el => el.classList.remove('tv-focus'));
-}
-function tvScroll(el) {
-  if (el && el.scrollIntoView) el.scrollIntoView({block:'nearest', inline:'nearest'});
-}
-function tvSourceItems() {
-  return [
-    document.getElementById('urlInput'),
-    document.getElementById('btnFetch'),
-    document.getElementById('btnUpload'),
-    document.getElementById('btnPaste'),
-    document.getElementById('pasteArea'),
-    document.getElementById('btnPasteConfirm')
-  ].filter(tvVisible);
-}
-function tvMainItems() {
-  const cats = [...document.querySelectorAll('.cat-item')].filter(tvVisible);
-  const cards = [...document.querySelectorAll('.chan-card')].filter(tvVisible);
-  const search = document.getElementById('searchInput');
-  return {cats, cards, search};
-}
-function tvSetFocus(el) {
-  if (!el) return;
-  tvClearFocus();
-  el.classList.add('tv-focus');
-  tvScroll(el);
-}
-function tvActivate(el) {
-  if (!el) return;
-  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-    el.focus();
-    return;
-  }
-  el.click();
-}
-function tvFocusSource(delta) {
-  const items = tvSourceItems();
-  if (!items.length) return;
-  tvFocusIndex = Math.max(0, Math.min(items.length-1, tvFocusIndex + delta));
-  tvSetFocus(items[tvFocusIndex]);
-}
-function tvFocusMain(kind, index) {
-  const {cats, cards, search} = tvMainItems();
-  if (kind === 'search') {
-    tvFocusType = 'search'; tvFocusIndex = 0; tvSetFocus(search); return;
-  }
-  if (kind === 'cat') {
-    tvFocusType = 'cat';
-    tvFocusIndex = Math.max(0, Math.min(cats.length-1, index));
-    tvSetFocus(cats[tvFocusIndex]);
-    return;
-  }
-  tvFocusType = 'card';
-  tvFocusIndex = Math.max(0, Math.min(cards.length-1, index));
-  tvSetFocus(cards[tvFocusIndex]);
-}
-function tvGridMove(dir) {
-  const {cards} = tvMainItems();
-  if (!cards.length) return;
-  const current = tvFocusType === 'card' ? tvFocusIndex : 0;
-  const cols = Math.max(1, Math.round(
-    document.querySelector('.grid').getBoundingClientRect().width /
-    (cards[0].getBoundingClientRect().width + 16)
-  ));
-  let next = current;
-  if (dir === 'left') next = current - 1;
-  if (dir === 'right') next = current + 1;
-  if (dir === 'up') next = current - cols;
-  if (dir === 'down') next = current + cols;
-  next = Math.max(0, Math.min(cards.length-1, next));
-  tvFocusMain('card', next);
-}
-function tvOpenMain() {
-  const {cats, cards, search} = tvMainItems();
-  if (tvFocusType === 'search') { search.focus(); return; }
-  if (tvFocusType === 'cat') tvActivate(cats[tvFocusIndex]);
-  else tvActivate(cards[tvFocusIndex]);
-}
-function tvBack() {
-  if (tvInPlayer || document.getElementById('playerOverlay').classList.contains('active')) {
-    closePlayer(); tvInPlayer = false;
-    tvFocusMain('card', Math.min(tvFocusIndex, Math.max(0, tvMainItems().cards.length-1)));
-    return;
-  }
-  if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-    document.activeElement.blur(); tvClearFocus(); return;
-  }
-  if (tvFocusType === 'card') {
-    tvFocusMain('cat', 0);
-  } else if (tvFocusType === 'cat') {
-    tvFocusMain('search', 0);
-  }
-}
-
-document.addEventListener('keydown', function(e) {
-  const key = e.key;
-  const code = e.keyCode;
-
-  // TV remotes / keyboard equivalents
-  const left = key === 'ArrowLeft' || code === 37;
-  const right = key === 'ArrowRight' || code === 39;
-  const up = key === 'ArrowUp' || code === 38;
-  const down = key === 'ArrowDown' || code === 40;
-  const ok = key === 'Enter' || key === ' ' || code === 13 || code === 32;
-  const back = key === 'Escape' || key === 'Backspace' || code === 27 || code === 8 || key === 'BrowserBack';
-
-  if (document.getElementById('playerOverlay').classList.contains('active')) {
-    tvInPlayer = true;
-    if (back) { e.preventDefault(); tvBack(); }
-    return;
-  }
-
-  if (back) { e.preventDefault(); tvBack(); return; }
-
-  // If typing in search/paste, let normal text input behavior work.
-  const active = document.activeElement;
-  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') &&
-      ![37,38,39,40,13,27,8].includes(code)) return;
-
-  const sourceScreenVisible = tvVisible(document.getElementById('sourceScreen'));
-  if (sourceScreenVisible) {
-    const items = tvSourceItems();
-    if (!items.length) return;
-    if (up) { e.preventDefault(); tvFocusSource(-1); }
-    if (down) { e.preventDefault(); tvFocusSource(1); }
-    if (ok) { e.preventDefault(); tvActivate(items[tvFocusIndex]); }
-    if (left || right) {
-      e.preventDefault();
-      // Left/right on the source screen does not leave the vertical menu.
-    }
-    return;
-  }
-
-  const {cats, cards, search} = tvMainItems();
-  if (!cats.length && !cards.length) return;
-
-  if (!document.querySelector('.tv-focus')) {
-    tvFocusMain('card', 0);
-    return;
-  }
-
-  if (tvFocusType === 'search') {
-    if (down) { e.preventDefault(); tvFocusMain('cat', 0); }
-    if (ok) { e.preventDefault(); search.focus(); }
-    return;
-  }
-
-  if (tvFocusType === 'cat') {
-    if (up) {
-      e.preventDefault();
-      tvFocusMain('cat', Math.max(0, tvFocusIndex-1));
-    } else if (down) {
-      e.preventDefault();
-      if (tvFocusIndex < cats.length-1) tvFocusMain('cat', tvFocusIndex+1);
-      else tvFocusMain('card', 0);
-    } else if (right) {
-      e.preventDefault(); tvFocusMain('card', 0);
-    } else if (left) {
-      e.preventDefault(); tvFocusMain('search', 0);
-    } else if (ok) {
-      e.preventDefault(); tvOpenMain();
-    }
-    return;
-  }
-
-  if (tvFocusType === 'card') {
-    if (left || right || up || down) {
-      e.preventDefault(); tvGridMove(left?'left':right?'right':up?'up':'down');
-    } else if (ok) {
-      e.preventDefault(); tvOpenMain();
-    }
-  }
-});
-
-// Initial focus and restore focus after playlist loads.
-setTimeout(() => {
-  const source = document.getElementById('sourceScreen');
-  if (tvVisible(source)) {
-    tvFocusIndex = 1; // botão "Carregar deste link"
-    const items = tvSourceItems();
-    if (items[tvFocusIndex]) tvSetFocus(items[tvFocusIndex]);
-  }
-}, 150);
-
-const _loadPlaylistOriginal = loadPlaylist;
-loadPlaylist = function(text) {
-  _loadPlaylistOriginal(text);
-  setTimeout(() => {
-    tvFocusType = 'cat';
-    tvFocusIndex = 0;
-    const cats = document.querySelectorAll('.cat-item');
-    if (cats.length) tvSetFocus(cats[0]);
-  }, 100);
-};
-
-// Allow TV remote keys even when browser maps them differently.
-window.addEventListener('popstate', tvBack);
-
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <style>
   :root{
     --bg: #0a0c10;
@@ -242,7 +30,7 @@ window.addEventListener('popstate', tvBack);
   }
   ::selection{ background:var(--signal); color:#000; }
 
-  /* ---------- Header / dial ---------- */
+  /* Header */
   header{
     display:flex;
     align-items:center;
@@ -265,12 +53,6 @@ window.addEventListener('popstate', tvBack);
     color:var(--text);
   }
   .brand .mark span{ color:var(--signal); }
-  .brand .sub{
-    font-size:10px;
-    color:var(--muted);
-    letter-spacing:0.2em;
-    text-transform:uppercase;
-  }
   .dot-live{
     width:7px;height:7px;border-radius:50%;
     background:var(--live);
@@ -311,14 +93,14 @@ window.addEventListener('popstate', tvBack);
   }
   .count-badge b{ color:var(--signal); font-weight:600; }
 
-  /* ---------- Layout ---------- */
+  /* Layout */
   .layout{
     flex:1;
     display:flex;
     min-height:0;
   }
 
-  /* ---------- Category rail ---------- */
+  /* Category rail */
   nav.cats{
     width:190px;
     flex-shrink:0;
@@ -352,7 +134,7 @@ window.addEventListener('popstate', tvBack);
   }
   .cat-item small{ font-family:'JetBrains Mono',monospace; opacity:.7; font-size:10px; }
 
-  /* ---------- Channel grid ---------- */
+  /* Channel grid */
   main.grid-wrap{
     flex:1;
     overflow-y:auto;
@@ -422,7 +204,7 @@ window.addEventListener('popstate', tvBack);
     font-size:13px;
   }
 
-  /* ---------- Player overlay ---------- */
+  /* Player overlay */
   .player-overlay{
     position:fixed; inset:0;
     background:#000;
@@ -475,7 +257,7 @@ window.addEventListener('popstate', tvBack);
   @keyframes spin{ to{ transform:rotate(360deg); } }
   .status-err{ color:var(--live); max-width:420px; text-align:center; padding:0 20px; }
 
-  /* ---------- Loader / source screen ---------- */
+  /* Tela de Carregamento Automático Inicial */
   .source-screen{
     position:fixed; inset:0;
     background:var(--bg);
@@ -496,136 +278,47 @@ window.addEventListener('popstate', tvBack);
     margin:0;
   }
   .source-screen h1 span{ color:var(--signal); }
-  .source-screen p{ color:var(--muted); font-size:13px; max-width:440px; margin:0; }
-  .source-actions{
-    display:flex; flex-direction:column; gap:12px;
-    width:100%; max-width:420px;
-  }
-  .src-btn{
-    background:var(--bg-card);
-    border:1px solid var(--line);
-    color:var(--text);
-    padding:14px 18px;
-    border-radius:8px;
-    font-size:13.5px;
-    cursor:pointer;
-    text-align:left;
-    display:flex; align-items:center; gap:12px;
-    transition:border-color .15s, background .15s;
-  }
-  .src-btn:hover{ border-color:var(--signal); background:var(--signal-dim); }
-  .src-btn .icon{ font-size:18px; }
-  .src-btn .lbl{ display:flex; flex-direction:column; gap:2px; }
-  .src-btn .lbl b{ font-size:13.5px; }
-  .src-btn .lbl small{ color:var(--muted); font-size:11px; }
-  textarea.paste-area{
-    width:100%; max-width:420px; height:120px;
-    background:var(--bg-card); border:1px solid var(--line);
-    color:var(--text); border-radius:8px; padding:10px;
-    font-family:'JetBrains Mono',monospace; font-size:11px;
-    display:none; resize:vertical;
-  }
-  .source-loading{ display:none; flex-direction:column; align-items:center; gap:12px; }
-  .source-err{ color:var(--live); font-size:12px; display:none; max-width:420px; }
-  input[type=file]{ display:none; }
-  .url-input{
-    width:100%; max-width:420px;
-    background:var(--bg-card); border:1px solid var(--line);
-    color:var(--text); border-radius:8px; padding:11px 13px;
-    font-size:12.5px; font-family:'JetBrains Mono',monospace;
-    outline:none;
-  }
-  .url-input:focus{ border-color:var(--signal); }
 
-/* ===== TV / controle remoto ===== */
-html.tv-mode, html.tv-mode body {
-  width:100%;
-  height:100%;
-  overflow:hidden;
-}
-.tv-mode body { font-size:18px; }
-.tv-mode header { padding:18px 28px; min-height:72px; }
-.tv-mode .brand .mark { font-size:28px; }
-.tv-mode .brand .sub { font-size:13px; }
-.tv-mode .search-wrap { max-width:520px; }
-.tv-mode .search-wrap input { font-size:18px; padding:13px 16px 13px 42px; }
-.tv-mode .count-badge { font-size:14px; }
-.tv-mode nav.cats { width:250px; padding:14px 0; }
-.tv-mode .cat-item { padding:14px 20px; font-size:17px; }
-.tv-mode .cat-item small { font-size:13px; }
-.tv-mode main.grid-wrap { padding:22px 26px 50px; }
-.tv-mode .grid { grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:16px; }
-.tv-mode .chan-card { min-height:190px; padding:18px 14px; border-radius:12px; gap:12px; }
-.tv-mode .chan-logo-box { width:78px; height:78px; margin-top:8px; }
-.tv-mode .chan-name { font-size:17px; }
-.tv-mode .chan-num { font-size:13px; top:12px; left:14px; }
-.tv-mode .chan-card.tv-focus,
-.tv-mode .cat-item.tv-focus,
-.tv-mode #searchInput.tv-focus {
-  outline:4px solid var(--signal);
-  outline-offset:3px;
-  box-shadow:0 0 20px rgba(0,217,255,.35);
-  transform:scale(1.035);
-  z-index:10;
-}
-.tv-mode .cat-item.tv-focus { transform:none; background:var(--signal-dim); color:var(--signal); }
-.tv-mode #searchInput.tv-focus { border-color:var(--signal); }
-.tv-mode .player-top { padding:20px 28px; }
-.tv-mode .player-top .pname { font-size:20px; }
-.tv-mode .player-top .pcat { font-size:14px; }
-.tv-mode .btn-close { width:48px; height:48px; font-size:22px; }
-.tv-mode .source-screen h1 { font-size:44px; }
-.tv-mode .source-screen p { font-size:17px; max-width:700px; }
-.tv-mode .source-actions { max-width:650px; }
-.tv-mode .src-btn { padding:18px 22px; font-size:18px; }
-.tv-mode .src-btn .lbl b { font-size:18px; }
-.tv-mode .src-btn .lbl small { font-size:14px; }
+  /* TV Mode / Controle Remoto */
+  html.tv-mode, html.tv-mode body { width:100%; height:100%; overflow:hidden; }
+  .tv-mode body { font-size:18px; }
+  .tv-mode header { padding:18px 28px; min-height:72px; }
+  .tv-mode .brand .mark { font-size:28px; }
+  .tv-mode .search-wrap { max-width:520px; }
+  .tv-mode .search-wrap input { font-size:18px; padding:13px 16px 13px 42px; }
+  .tv-mode nav.cats { width:250px; padding:14px 0; }
+  .tv-mode .cat-item { padding:14px 20px; font-size:17px; }
+  .tv-mode main.grid-wrap { padding:22px 26px 50px; }
+  .tv-mode .grid { grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:16px; }
+  .tv-mode .chan-card { min-height:190px; padding:18px 14px; border-radius:12px; gap:12px; }
+  .tv-mode .chan-logo-box { width:78px; height:78px; margin-top:8px; }
+  .tv-mode .chan-name { font-size:17px; }
+  .tv-mode .chan-card.tv-focus,
+  .tv-mode .cat-item.tv-focus,
+  .tv-mode #searchInput.tv-focus {
+    outline:4px solid var(--signal);
+    outline-offset:3px;
+    box-shadow:0 0 20px rgba(0,217,255,.35);
+    transform:scale(1.035);
+    z-index:10;
+  }
+  .tv-mode .cat-item.tv-focus { transform:none; background:var(--signal-dim); color:var(--signal); }
 
-.tv-help {
-  position:fixed; right:24px; bottom:18px; z-index:500;
-  background:rgba(0,0,0,.78); border:1px solid var(--line);
-  color:var(--muted); border-radius:8px; padding:8px 12px;
-  font:13px system-ui,sans-serif; pointer-events:none;
-}
-.tv-mode .tv-help { display:block; }
-
-@media (max-width: 900px) {
-  .tv-mode nav.cats { width:210px; }
-  .tv-mode .grid { grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); }
-}
-
+  .tv-help {
+    position:fixed; right:24px; bottom:18px; z-index:500;
+    background:rgba(0,0,0,.78); border:1px solid var(--line);
+    color:var(--muted); border-radius:8px; padding:8px 12px;
+    font:13px system-ui,sans-serif; pointer-events:none;
+  }
 </style>
 </head>
 <body>
 
+<!-- Tela de Carregamento Automático Inicial -->
 <div id="sourceScreen" class="source-screen">
   <h1><span class="dot-live"></span>SINTONI<span>A</span></h1>
-  <p>Carregue uma lista de canais IPTV (formato M3U) para começar. Se o link direto não carregar por bloqueio do navegador, baixe o arquivo e envie manualmente ou cole o conteúdo abaixo.</p>
-  <div class="source-actions" id="sourceActions">
-    <input type="text" id="urlInput" class="url-input" value="https://iptv-org.github.io/iptv/index.m3u" placeholder="Cole aqui o link .m3u">
-    <button class="src-btn" id="btnFetch">
-      <span class="icon">📡</span>
-      <span class="lbl"><b>Carregar deste link</b><small>Busca direto, com proxy alternativo se necessário</small></span>
-    </button>
-    <button class="src-btn" id="btnUpload">
-      <span class="icon">📁</span>
-      <span class="lbl"><b>Enviar arquivo .m3u</b><small>Baixe o arquivo do link e selecione aqui</small></span>
-    </button>
-    <input type="file" id="fileInput" accept=".m3u,.m3u8,text/plain">
-    <button class="src-btn" id="btnPaste">
-      <span class="icon">📋</span>
-      <span class="lbl"><b>Colar conteúdo M3U</b><small>Cole o texto da playlist manualmente</small></span>
-    </button>
-  </div>
-  <textarea class="paste-area" id="pasteArea" placeholder="#EXTM3U&#10;#EXTINF:-1,Canal Exemplo&#10;https://exemplo.com/stream.m3u8"></textarea>
-  <button class="src-btn" id="btnPasteConfirm" style="display:none;max-width:420px;">
-    <span class="icon">✔</span><span class="lbl"><b>Usar este conteúdo</b></span>
-  </button>
-  <div class="source-loading" id="sourceLoading">
-    <div class="spinner"></div>
-    <div style="color:var(--muted);font-size:12px;" id="sourceLoadingMsg">Buscando lista…</div>
-  </div>
-  <div class="source-err" id="sourceErr"></div>
+  <div class="spinner"></div>
+  <div style="color:var(--muted);font-size:14px;" id="loadingText">Carregando canais de TV, aguarde...</div>
 </div>
 
 <header id="mainHeader" style="display:none;">
@@ -660,87 +353,42 @@ html.tv-mode, html.tv-mode body {
 </div>
 
 <script>
+// Ativa o modo TV para facilitar visualização e navegação por controle
+document.documentElement.classList.add('tv-mode');
+
+// URL padrão da lista M3U. Se tiver uma lista personalizada para ela, substitua o link abaixo:
 const M3U_URL = "https://iptv-org.github.io/iptv/index.m3u";
+
 let channels = [];
 let activeCategory = "TODOS";
 let hls = null;
 
-// ---------- Source screen wiring ----------
-const sourceScreen = document.getElementById('sourceScreen');
-const sourceActions = document.getElementById('sourceActions');
-const sourceLoading = document.getElementById('sourceLoading');
-const sourceErr = document.getElementById('sourceErr');
-const pasteArea = document.getElementById('pasteArea');
-const btnPasteConfirm = document.getElementById('btnPasteConfirm');
-const fileInput = document.getElementById('fileInput');
-
-const sourceLoadingMsg = document.getElementById('sourceLoadingMsg');
+// Busca automática ao carregar a página
+window.addEventListener('DOMContentLoaded', async () => {
+  const loadingText = document.getElementById('loadingText');
+  try {
+    const text = await fetchWithFallback(M3U_URL);
+    loadPlaylist(text);
+  } catch (err) {
+    loadingText.textContent = "Erro ao carregar canais. Tente atualizar a página.";
+    console.error(err);
+  }
+});
 
 async function fetchWithFallback(url){
-  // 1) tentativa direta
   try{
-    const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
+    const res = await fetch(url, { cache: 'no-store' });
     if(!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    if(text.trim().length === 0) throw new Error('resposta vazia');
-    return text;
+    return await res.text();
   }catch(err1){
-    // 2) tentativa via proxy público (contorna CORS)
-    sourceLoadingMsg.textContent = 'Link direto bloqueado, tentando via proxy…';
-    try{
-      const proxied = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-      const res2 = await fetch(proxied, { cache: 'no-store' });
-      if(!res2.ok) throw new Error('HTTP ' + res2.status);
-      const text2 = await res2.text();
-      if(text2.trim().length === 0) throw new Error('resposta vazia');
-      return text2;
-    }catch(err2){
-      throw new Error('direto: ' + err1.message + ' | proxy: ' + err2.message);
-    }
+    document.getElementById('loadingText').textContent = 'Tentando servidor alternativo...';
+    const proxied = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+    const res2 = await fetch(proxied, { cache: 'no-store' });
+    if(!res2.ok) throw new Error('HTTP ' + res2.status);
+    return await res2.text();
   }
 }
 
-document.getElementById('btnFetch').addEventListener('click', async () => {
-  const url = document.getElementById('urlInput').value.trim();
-  if(!url){
-    sourceErr.style.display = 'block';
-    sourceErr.textContent = 'Cole um link .m3u válido antes de carregar.';
-    return;
-  }
-  sourceActions.style.display = 'none';
-  sourceErr.style.display = 'none';
-  sourceLoadingMsg.textContent = 'Buscando lista…';
-  sourceLoading.style.display = 'flex';
-  try{
-    const text = await fetchWithFallback(url);
-    loadPlaylist(text);
-  }catch(err){
-    sourceLoading.style.display = 'none';
-    sourceActions.style.display = 'flex';
-    sourceErr.style.display = 'block';
-    sourceErr.textContent = 'Não foi possível buscar essa lista automaticamente. Use "Enviar arquivo" ou "Colar conteúdo" abaixo. Detalhe: ' + err.message;
-  }
-});
-
-document.getElementById('btnUpload').addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = (ev) => loadPlaylist(ev.target.result);
-  reader.readAsText(file);
-});
-
-document.getElementById('btnPaste').addEventListener('click', () => {
-  pasteArea.style.display = 'block';
-  btnPasteConfirm.style.display = 'flex';
-  pasteArea.focus();
-});
-btnPasteConfirm.addEventListener('click', () => {
-  if(pasteArea.value.trim()) loadPlaylist(pasteArea.value);
-});
-
-// ---------- M3U parsing ----------
 function parseM3U(text){
   const lines = text.split(/\r?\n/);
   const result = [];
@@ -761,14 +409,10 @@ function parseM3U(text){
         group: groupMatch ? groupMatch[1] : 'Outros',
         url: ''
       };
-    } else if(line.startsWith('#')){
-      // ignore other tags
-    } else {
-      if(current){
-        current.url = line;
-        result.push(current);
-        current = null;
-      }
+    } else if(!line.startsWith('#') && current){
+      current.url = line;
+      result.push(current);
+      current = null;
     }
   }
   return result;
@@ -777,53 +421,42 @@ function parseM3U(text){
 function loadPlaylist(text){
   const parsed = parseM3U(text);
   if(parsed.length === 0){
-    sourceLoading.style.display = 'none';
-    sourceActions.style.display = 'flex';
-    sourceErr.style.display = 'block';
-    sourceErr.textContent = 'Nenhum canal encontrado nesse conteúdo. Verifique se é um arquivo M3U válido.';
+    document.getElementById('loadingText').textContent = 'Nenhum canal encontrado na lista.';
     return;
   }
   channels = parsed;
-  sourceScreen.classList.add('hidden');
+  document.getElementById('sourceScreen').classList.add('hidden');
   document.getElementById('mainHeader').style.display = 'flex';
   document.getElementById('mainLayout').style.display = 'flex';
   buildCategories();
   renderGrid();
 }
 
-// ---------- Category translation (labels only; filtering key stays original) ----------
+// Categorias
 const CATEGORY_PT = {
-  'auto': 'Automóveis', 'animation': 'Animação', 'business': 'Negócios',
-  'classic': 'Clássicos', 'comedy': 'Comédia', 'cooking': 'Culinária',
-  'culture': 'Cultura', 'documentary': 'Documentários', 'education': 'Educação',
-  'entertainment': 'Entretenimento', 'family': 'Família', 'fashion': 'Moda',
-  'general': 'Geral', 'kids': 'Infantil', 'legislative': 'Legislativo',
-  'lifestyle': 'Estilo de vida', 'local': 'Local', 'movies': 'Filmes',
-  'music': 'Música', 'news': 'Notícias', 'outdoor': 'Ar livre',
-  'relax': 'Relaxamento', 'religious': 'Religioso', 'science': 'Ciência',
-  'sci-fi': 'Ficção científica', 'series': 'Séries', 'shop': 'Compras',
-  'sport': 'Esportes', 'sports': 'Esportes', 'travel': 'Viagens',
-  'weather': 'Clima', 'medical': 'Saúde', 'undefined': 'Outros',
-  'xxx': 'Adulto', 'radio': 'Rádio', 'public': 'Pública', 'regional':'Regional'
+  'general': 'Geral', 'news': 'Notícias', 'entertainment': 'Entretenimento',
+  'movies': 'Filmes', 'sports': 'Esportes', 'kids': 'Infantil', 'music': 'Música',
+  'culture': 'Cultura', 'documentary': 'Documentários', 'series': 'Séries'
 };
+
 function translateCategory(cat){
   if(!cat) return 'Outros';
-  const key = cat.trim().toLowerCase();
-  return CATEGORY_PT[key] || cat;
+  return CATEGORY_PT[cat.trim().toLowerCase()] || cat;
 }
 
-// ---------- Categories ----------
 function buildCategories(){
   const counts = {};
   channels.forEach(c => { counts[c.group] = (counts[c.group]||0)+1; });
   const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
   const nav = document.getElementById('catsNav');
   nav.innerHTML = '';
+  
   const allItem = document.createElement('div');
   allItem.className = 'cat-item active';
   allItem.innerHTML = `<span>Todos os canais</span><small>${channels.length}</small>`;
   allItem.onclick = () => selectCategory('TODOS', allItem);
   nav.appendChild(allItem);
+
   cats.forEach(cat => {
     const item = document.createElement('div');
     item.className = 'cat-item';
@@ -840,7 +473,6 @@ function selectCategory(cat, el){
   renderGrid();
 }
 
-// ---------- Grid rendering ----------
 function renderGrid(){
   const search = document.getElementById('searchInput').value.trim().toLowerCase();
   let list = channels;
@@ -849,16 +481,8 @@ function renderGrid(){
 
   document.getElementById('countBadge').innerHTML = `<b>${list.length}</b> canais`;
   const grid = document.getElementById('grid');
-  const empty = document.getElementById('emptyState');
   grid.innerHTML = '';
 
-  if(list.length === 0){
-    empty.style.display = 'block';
-    return;
-  }
-  empty.style.display = 'none';
-
-  // Cap render for performance; render first 400, rest available via search/category narrowing
   const capped = list.slice(0, 400);
   capped.forEach((c, idx) => {
     const card = document.createElement('div');
@@ -874,24 +498,14 @@ function renderGrid(){
     card.onclick = () => playChannel(c);
     grid.appendChild(card);
   });
-  if(list.length > 400){
-    const note = document.createElement('div');
-    note.style.cssText = 'grid-column:1/-1;text-align:center;color:var(--muted);font-size:12px;padding:14px;';
-    note.textContent = `Mostrando 400 de ${list.length}. Use a busca para refinar.`;
-    grid.appendChild(note);
-  }
 }
 
-function initials(name){
-  return name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
-}
-function escapeHtml(str){
-  return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-}
+function initials(name){ return name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
+function escapeHtml(str){ return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
 document.getElementById('searchInput').addEventListener('input', renderGrid);
 
-// ---------- Player ----------
+// Player
 const overlay = document.getElementById('playerOverlay');
 const video = document.getElementById('video');
 const statusEl = document.getElementById('playerStatus');
@@ -905,11 +519,8 @@ function playChannel(c){
   if(hls){ hls.destroy(); hls = null; }
   video.pause();
   video.removeAttribute('src');
-  video.load();
 
   const url = c.url;
-  const useNativeHls = video.canPlayType('application/vnd.apple.mpegurl');
-
   if(url.includes('.m3u8') && window.Hls && Hls.isSupported()){
     hls = new Hls({ maxBufferLength: 30 });
     hls.loadSource(url);
@@ -918,25 +529,10 @@ function playChannel(c){
       statusEl.innerHTML = '';
       video.play().catch(()=>{});
     });
-    hls.on(Hls.Events.ERROR, (evt, data) => {
-      if(data.fatal){
-        statusEl.innerHTML = `<div class="status-err">Não foi possível reproduzir este canal (${data.type}). O link pode estar offline, bloqueado por CORS, ou exigir HTTP em página HTTPS.</div>`;
-      }
-    });
-  } else if(useNativeHls){
-    video.src = url;
-    video.addEventListener('loadedmetadata', () => { statusEl.innerHTML=''; }, { once:true });
-    video.play().catch(()=>{});
   } else {
     video.src = url;
-    video.play().then(()=>{ statusEl.innerHTML=''; }).catch((err)=>{
-      statusEl.innerHTML = `<div class="status-err">Não foi possível reproduzir este canal. Formato não suportado pelo navegador ou stream indisponível.</div>`;
-    });
+    video.play().then(()=>{ statusEl.innerHTML=''; }).catch(()=>{});
   }
-
-  video.addEventListener('error', () => {
-    statusEl.innerHTML = `<div class="status-err">Erro ao carregar o stream. Tente outro canal — nem todos os links da lista pública ficam sempre no ar.</div>`;
-  }, { once:true });
 }
 
 document.getElementById('btnClose').addEventListener('click', closePlayer);
@@ -944,16 +540,10 @@ function closePlayer(){
   overlay.classList.remove('active');
   if(hls){ hls.destroy(); hls = null; }
   video.pause();
-  video.removeAttribute('src');
-  video.load();
 }
-document.addEventListener('keydown', (e) => {
-  if(e.key === 'Escape' && overlay.classList.contains('active')) closePlayer();
-});
 </script>
 
-
-<div class="tv-help" id="tvHelp">← ↑ ↓ → Navegar &nbsp; • &nbsp; OK Selecionar &nbsp; • &nbsp; VOLTAR Fechar</div>
+<div class="tv-help" id="tvHelp">Toque ou clique em um canal para assistir</div>
 
 </body>
 </html>
