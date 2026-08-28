@@ -16,7 +16,6 @@
     --signal: #00d9ff;
     --signal-dim: #0a3540;
     --live: #ff5a36;
-    --amber: #ffb020;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;height:100%;background:var(--bg);width:100%;overflow:hidden;}
@@ -169,7 +168,7 @@
 
 <div id="sourceScreen" class="source-screen">
   <div class="spinner"></div>
-  <div style="color:var(--muted);font-size:16px;" id="loadingText">Carregando canais em português...</div>
+  <div style="color:var(--muted);font-size:16px;" id="loadingText">Carregando e verificando canais funcionais...</div>
 </div>
 
 <header id="mainHeader" style="display:none;">
@@ -192,7 +191,6 @@
 </div>
 
 <script>
-// Lista de canais abertos brasileiros e de Portugal verificados
 const M3U_URL = "https://iptv-org.github.io/iptv/languages/por.m3u";
 let channels = [];
 let filteredChannels = [];
@@ -200,14 +198,13 @@ let currentChannelIndex = -1;
 let activeCategory = "TODOS";
 let hls = null;
 let osdTimeout = null;
-let loadTimeout = null;
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     const text = await fetchWithFallback(M3U_URL);
     loadPlaylist(text);
   } catch (err) {
-    document.getElementById('loadingText').textContent = "Erro ao carregar canais.";
+    document.getElementById('loadingText').textContent = "Erro ao carregar lista de canais.";
   }
 });
 
@@ -295,10 +292,10 @@ function renderGrid(){
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
 
-  const capped = filteredChannels.slice(0, 300);
-  capped.forEach((c, idx) => {
+  filteredChannels.forEach((c, idx) => {
     const card = document.createElement('div');
     card.className = 'chan-card';
+    card.id = `card-${idx}`;
     card.dataset.index = idx;
     card.tabIndex = 0;
     card.innerHTML = `
@@ -315,7 +312,13 @@ function renderGrid(){
   });
 }
 
-// BUSCA FUNCIONAL NO CONTROLE
+function removeChannelFromList(index) {
+  const cardElem = document.getElementById(`card-${index}`);
+  if (cardElem) {
+    cardElem.remove(); // Remove o card visualmente da tela
+  }
+}
+
 const searchInput = document.getElementById('searchInput');
 searchInput.addEventListener('input', renderGrid);
 searchInput.addEventListener('keydown', (e) => {
@@ -347,15 +350,6 @@ function showOsd(text){
   osdTimeout = setTimeout(() => { osd.style.display = 'none'; }, 3000);
 }
 
-function handleChannelError(name) {
-  if(loadTimeout) clearTimeout(loadTimeout);
-  showOsd(`❌ Fora do ar: ${name}`);
-  // Fecha o player automaticamente após 2 segundos sem perder o foco do controle
-  setTimeout(() => {
-    closePlayer();
-  }, 2000);
-}
-
 function playChannel(index){
   if(index < 0 || index >= filteredChannels.length) return;
   currentChannelIndex = index;
@@ -365,59 +359,63 @@ function playChannel(index){
   showOsd(`📺 ${c.name}`);
 
   if(hls){ hls.destroy(); hls = null; }
-  if(loadTimeout) clearTimeout(loadTimeout);
 
-  // Se demorar mais de 6s para rodar o vídeo, trata como fora do ar
-  loadTimeout = setTimeout(() => {
-    handleChannelError(c.name);
-  }, 6000);
+  // Timeout de 5s: se não rodar, considera fora do ar, apaga o card e fecha o player
+  const streamTimeout = setTimeout(() => {
+    showOsd(`❌ Fora do ar (Removido)`);
+    removeChannelFromList(index);
+    setTimeout(() => closePlayer(), 1500);
+  }, 5000);
 
   if(c.url.includes('.m3u8') && window.Hls && Hls.isSupported()){
-    hls = new Hls({ manifestLoadingTimeOut: 5000 });
+    hls = new Hls({ manifestLoadingTimeOut: 4000 });
     hls.loadSource(c.url);
     hls.attachMedia(video);
     
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      video.play().then(() => {
-        if(loadTimeout) clearTimeout(loadTimeout);
-      }).catch(() => handleChannelError(c.name));
+      clearTimeout(streamTimeout);
+      video.play().catch(() => {
+        removeChannelFromList(index);
+        closePlayer();
+      });
     });
 
     hls.on(Hls.Events.ERROR, (event, data) => {
       if (data.fatal) {
-        handleChannelError(c.name);
+        clearTimeout(streamTimeout);
+        removeChannelFromList(index);
+        closePlayer();
       }
     });
   } else {
     video.src = c.url;
     video.play().then(() => {
-      if(loadTimeout) clearTimeout(loadTimeout);
+      clearTimeout(streamTimeout);
     }).catch(() => {
-      handleChannelError(c.name);
+      clearTimeout(streamTimeout);
+      removeChannelFromList(index);
+      closePlayer();
     });
   }
 }
 
 function closePlayer(){
-  if(loadTimeout) clearTimeout(loadTimeout);
   overlay.classList.remove('active');
   if(hls){ hls.destroy(); hls = null; }
   video.pause();
   video.removeAttribute('src');
   
   setTimeout(() => {
-    // Restaura o foco no card do canal atual para poder trocar com o controle
-    const currentCard = document.querySelector(`.chan-card[data-index="${currentChannelIndex}"]`);
-    if(currentCard) {
-      currentCard.focus();
-    } else {
-      const firstCard = document.querySelector('.chan-card');
-      if(firstCard) firstCard.focus();
-    }
+    const currentCard = document.querySelector('.chan-card');
+    if(currentCard) firstCardFocus();
   }, 100);
 }
 
-// CONTROLE REMOTO GLOBAL
+function firstCardFocus(){
+  const firstCard = document.querySelector('.chan-card');
+  if(firstCard) firstCard.focus();
+}
+
 document.addEventListener('keydown', (e) => {
   const code = e.keyCode || e.which;
   const isPlayerActive = overlay.classList.contains('active');
