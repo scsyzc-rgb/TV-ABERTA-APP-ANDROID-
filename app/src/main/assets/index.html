@@ -190,7 +190,7 @@
   <div class="search-wrap">
     <input type="text" id="searchInput" placeholder="Buscar canal..." tabindex="0">
   </div>
-  <button class="btn-reset" id="btnReset" tabindex="0">🔄 Restaurar Canais Excluídos</button>
+  <button class="btn-reset" id="btnReset" tabindex="0">🔄 Restaurar Canais</button>
 </header>
 
 <div class="layout" id="mainLayout" style="display:none;">
@@ -266,7 +266,6 @@ function parseM3U(text){
   return result;
 }
 
-// Validação aprofundada da transmissão HLS (Baixa parte do manifesto m3u8 para confirmar se há mídia real)
 async function verifyStreamHealth(chan) {
   return new Promise((resolve) => {
     const controller = new AbortController();
@@ -279,16 +278,14 @@ async function verifyStreamHealth(chan) {
       })
       .then(body => {
         clearTimeout(timer);
-        // Confirma se é uma playlist HLS real contendo trechos/segmentos
         if (body.includes('#EXTM3U') || body.includes('#EXTINF') || chan.url.includes('.m3u8')) {
           resolve(chan);
         } else {
-          resolve(chan); // fallback se não for HLS puro
+          resolve(chan);
         }
       })
       .catch(() => {
         clearTimeout(timer);
-        // Adiciona à lista negra permanente imediatamente se não responder
         if (!deadChannels.includes(chan.url)) {
           deadChannels.push(chan.url);
           localStorage.setItem('sintonia_dead_channels', JSON.stringify(deadChannels));
@@ -301,9 +298,8 @@ async function verifyStreamHealth(chan) {
 async function loadAndVerifyPlaylist(text){
   const parsed = parseM3U(text);
   const total = parsed.length;
-  document.getElementById('loadingText').textContent = `Testando ${total} canais... (Excluindo links quebrados)`;
+  document.getElementById('loadingText').textContent = `Testando ${total} canais...`;
   
-  // Executa em pequenos blocos concorrentes para não travar a TV
   const chunkSize = 10;
   let verified = [];
 
@@ -323,8 +319,7 @@ async function loadAndVerifyPlaylist(text){
   renderGrid();
 
   setTimeout(() => {
-    const firstCard = document.querySelector('.chan-card');
-    if(firstCard) firstCard.focus();
+    focusFirstCard();
   }, 300);
 }
 
@@ -373,10 +368,16 @@ function renderGrid(){
     `;
     card.onclick = () => playChannel(idx);
     card.addEventListener('keydown', (e) => {
-      if(e.key === 'Enter' || e.keyCode === 13) playChannel(idx);
+      const code = e.keyCode || e.which;
+      if(e.key === 'Enter' || code === 13) playChannel(idx);
     });
     grid.appendChild(card);
   });
+}
+
+function focusFirstCard(){
+  const firstCard = document.querySelector('.chan-card');
+  if(firstCard) firstCard.focus();
 }
 
 function permanentlyRemoveChannel(index) {
@@ -401,23 +402,33 @@ function resetDeletedChannels() {
   }
 }
 
+// CORREÇÃO DE NAVEGAÇÃO DO CONTROLE REMOTO
 const searchInput = document.getElementById('searchInput');
+const btnReset = document.getElementById('btnReset');
+
 searchInput.addEventListener('input', renderGrid);
+
 searchInput.addEventListener('keydown', (e) => {
-  if(e.key === 'Enter' || e.keyCode === 13) {
+  const code = e.keyCode || e.which;
+  if(e.key === 'Enter' || code === 13) {
     e.preventDefault();
     renderGrid();
     searchInput.blur();
-    setTimeout(() => {
-      const firstCard = document.querySelector('.chan-card');
-      if(firstCard) firstCard.focus();
-    }, 100);
+    focusFirstCard();
   }
-  if(e.key === 'ArrowDown' || e.keyCode === 40) {
+  if(e.key === 'ArrowDown' || code === 40) {
     e.preventDefault();
     searchInput.blur();
-    const firstCard = document.querySelector('.chan-card');
-    if(firstCard) firstCard.focus();
+    focusFirstCard();
+  }
+});
+
+btnReset.addEventListener('keydown', (e) => {
+  const code = e.keyCode || e.which;
+  if(e.key === 'ArrowDown' || code === 40) {
+    e.preventDefault();
+    btnReset.blur();
+    focusFirstCard();
   }
 });
 
@@ -495,8 +506,7 @@ function closePlayer(){
     if(currentCard) {
       currentCard.focus();
     } else {
-      const firstCard = document.querySelector('.chan-card');
-      if(firstCard) firstCard.focus();
+      focusFirstCard();
     }
   }, 100);
 }
