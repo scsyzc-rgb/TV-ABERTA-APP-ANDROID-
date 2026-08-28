@@ -16,6 +16,7 @@
     --signal: #00d9ff;
     --signal-dim: #0a3540;
     --live: #ff5a36;
+    --danger: #e74c3c;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;height:100%;background:var(--bg);width:100%;overflow:hidden;}
@@ -60,6 +61,19 @@
     border-radius:6px;
     font-size:15px;
     outline:none;
+  }
+
+  .btn-reset {
+    background: rgba(231, 76, 60, 0.15);
+    border: 1px solid var(--danger);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    outline: none;
+    transition: all 0.2s;
   }
 
   .layout{ flex:1; display:flex; min-height:0; }
@@ -110,7 +124,7 @@
     outline:none;
   }
 
-  .chan-card:focus, .cat-item:focus, #searchInput:focus {
+  .chan-card:focus, .cat-item:focus, #searchInput:focus, .btn-reset:focus {
     border-color: var(--signal) !important;
     box-shadow: 0 0 18px rgba(0,217,255,0.4);
     transform: scale(1.04);
@@ -168,7 +182,7 @@
 
 <div id="sourceScreen" class="source-screen">
   <div class="spinner"></div>
-  <div style="color:var(--muted);font-size:16px;" id="loadingText">Filtrando e salvando canais funcionais...</div>
+  <div style="color:var(--muted);font-size:16px;" id="loadingText">Testando integridade das transmissões...</div>
 </div>
 
 <header id="mainHeader" style="display:none;">
@@ -176,6 +190,7 @@
   <div class="search-wrap">
     <input type="text" id="searchInput" placeholder="Buscar canal..." tabindex="0">
   </div>
+  <button class="btn-reset" id="btnReset" tabindex="0">🔄 Restaurar Canais Excluídos</button>
 </header>
 
 <div class="layout" id="mainLayout" style="display:none;">
@@ -200,10 +215,10 @@ let hls = null;
 let osdTimeout = null;
 let streamTimeout = null;
 
-// Lista de URLs marcadas como mortas salvas na TV
 let deadChannels = JSON.parse(localStorage.getItem('sintonia_dead_channels') || '[]');
 
 window.addEventListener('DOMContentLoaded', async () => {
+  document.getElementById('btnReset').onclick = resetDeletedChannels;
   try {
     const text = await fetchWithFallback(M3U_URL);
     await loadAndVerifyPlaylist(text);
@@ -242,7 +257,6 @@ function parseM3U(text){
       };
     } else if(!line.startsWith('#') && current){
       current.url = line;
-      // Só inclui se não estiver na lista negra salva permanentemente na TV
       if (current.url.startsWith('http') && !deadChannels.includes(current.url)) {
         result.push(current);
       }
@@ -252,27 +266,55 @@ function parseM3U(text){
   return result;
 }
 
-// Testa a conexão dos canais em lote ao carregar a página
+// Validação aprofundada da transmissão HLS (Baixa parte do manifesto m3u8 para confirmar se há mídia real)
+async function verifyStreamHealth(chan) {
+  return new Promise((resolve) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => { controller.abort(); resolve(null); }, 4000);
+
+    fetch(chan.url, { method: 'GET', signal: controller.signal, headers: { 'Range': 'bytes=0-500' } })
+      .then(res => {
+        if (!res.ok && res.status !== 206) throw new Error('HTTP status offline');
+        return res.text();
+      })
+      .then(body => {
+        clearTimeout(timer);
+        // Confirma se é uma playlist HLS real contendo trechos/segmentos
+        if (body.includes('#EXTM3U') || body.includes('#EXTINF') || chan.url.includes('.m3u8')) {
+          resolve(chan);
+        } else {
+          resolve(chan); // fallback se não for HLS puro
+        }
+      })
+      .catch(() => {
+        clearTimeout(timer);
+        // Adiciona à lista negra permanente imediatamente se não responder
+        if (!deadChannels.includes(chan.url)) {
+          deadChannels.push(chan.url);
+          localStorage.setItem('sintonia_dead_channels', JSON.stringify(deadChannels));
+        }
+        resolve(null);
+      });
+  });
+}
+
 async function loadAndVerifyPlaylist(text){
   const parsed = parseM3U(text);
-  document.getElementById('loadingText').textContent = `Verificando ${parsed.length} canais...`;
+  const total = parsed.length;
+  document.getElementById('loadingText').textContent = `Testando ${total} canais... (Excluindo links quebrados)`;
   
-  // Teste rápido com timeout de 3.5s por link
-  const promises = parsed.map(chan => {
-    return new Promise((resolve) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => { controller.abort(); resolve(null); }, 3500);
+  // Executa em pequenos blocos concorrentes para não travar a TV
+  const chunkSize = 10;
+  let verified = [];
 
-      fetch(chan.url, { method: 'HEAD', signal: controller.signal, mode: 'no-cors' })
-        .then(() => { clearTimeout(timer); resolve(chan); })
-        .catch(() => { clearTimeout(timer); resolve(null); });
-    });
-  });
+  for (let i = 0; i < parsed.length; i += chunkSize) {
+    const chunk = parsed.slice(i, i + chunkSize);
+    const results = await Promise.all(chunk.map(chan => verifyStreamHealth(chan)));
+    verified.push(...results.filter(c => c !== null));
+    document.getElementById('loadingText').textContent = `Validando transmissões... (${verified.length} OK / ${total} total)`;
+  }
 
-  const verifiedResults = await Promise.all(promises);
-  
-  // Mantém apenas os canais que responderam ao teste inicial
-  channels = verifiedResults.filter(c => c !== null);
+  channels = verified;
 
   document.getElementById('sourceScreen').classList.add('hidden');
   document.getElementById('mainHeader').style.display = 'flex';
@@ -337,7 +379,6 @@ function renderGrid(){
   });
 }
 
-// Salva a remoção permanentemente na memória da TV
 function permanentlyRemoveChannel(index) {
   if (index < 0 || index >= filteredChannels.length) return;
   const target = filteredChannels[index];
@@ -350,8 +391,14 @@ function permanentlyRemoveChannel(index) {
   }
 
   channels = channels.filter(c => c.url !== target.url);
-  const cardElem = document.getElementById(`card-${index}`);
-  if (cardElem) cardElem.remove();
+  renderGrid();
+}
+
+function resetDeletedChannels() {
+  if (confirm("Deseja restaurar todos os canais excluídos e recarregar o app?")) {
+    localStorage.removeItem('sintonia_dead_channels');
+    window.location.reload();
+  }
 }
 
 const searchInput = document.getElementById('searchInput');
@@ -394,7 +441,7 @@ video.onplaying = () => {
 
 function handleFailedStream(index, name) {
   if(streamTimeout) clearTimeout(streamTimeout);
-  showOsd(`❌ Fora do ar (Removido Permanentemente)`);
+  showOsd(`❌ Sem sinal (Removido)`);
   permanentlyRemoveChannel(index);
   setTimeout(() => {
     closePlayer();
@@ -414,10 +461,10 @@ function playChannel(index){
 
   streamTimeout = setTimeout(() => {
     handleFailedStream(index, c.name);
-  }, 6000);
+  }, 5000);
 
   if(c.url.includes('.m3u8') && window.Hls && Hls.isSupported()){
-    hls = new Hls({ manifestLoadingTimeOut: 5000 });
+    hls = new Hls({ manifestLoadingTimeOut: 4000 });
     hls.loadSource(c.url);
     hls.attachMedia(video);
     
