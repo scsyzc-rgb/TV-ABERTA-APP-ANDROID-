@@ -55,7 +55,7 @@
   .search-wrap input{
     width:100%;
     background:var(--bg);
-    border:1px solid var(--line);
+    border:2px solid var(--line);
     color:var(--text);
     padding:10px 14px;
     border-radius:6px;
@@ -97,7 +97,6 @@
     gap:14px;
   }
   
-  /* Estilo dos Cards e Destaque do Controle Remoto */
   .chan-card{
     background:var(--bg-card);
     border:2px solid var(--line);
@@ -112,7 +111,6 @@
     outline:none;
   }
 
-  /* Foco visível do Controle Remoto (D-Pad) */
   .chan-card:focus, .cat-item:focus, #searchInput:focus {
     border-color: var(--signal) !important;
     box-shadow: 0 0 18px rgba(0,217,255,0.4);
@@ -139,6 +137,16 @@
   }
   .player-overlay.active{ display:flex; flex-direction:column; }
   video{ width:100%; height:100%; background:#000; }
+
+  .player-osd{
+    position:absolute; top:20px; left:20px;
+    background:rgba(0,0,0,0.8); color:var(--text);
+    padding:10px 18px; border-radius:8px;
+    border:1px solid var(--signal);
+    font-size:18px; font-weight:600;
+    pointer-events:none; z-index:110;
+    display:none;
+  }
 
   .source-screen{
     position:fixed; inset:0;
@@ -167,8 +175,7 @@
 <header id="mainHeader" style="display:none;">
   <div class="brand"><div class="mark"><span class="dot-live"></span>SINTONI<span>A</span></div></div>
   <div class="search-wrap">
-    <!-- tabindex="1" e blur() para não travar o controle remoto aqui -->
-    <input type="text" id="searchInput" placeholder="Buscar canal..." tabindex="1">
+    <input type="text" id="searchInput" placeholder="Buscar canal..." tabindex="0">
   </div>
 </header>
 
@@ -180,14 +187,18 @@
 </div>
 
 <div class="player-overlay" id="playerOverlay">
-  <video id="video" controls autoplay playsinline></video>
+  <div class="player-osd" id="playerOsd"></div>
+  <video id="video" autoplay playsinline></video>
 </div>
 
 <script>
 const M3U_URL = "https://iptv-org.github.io/iptv/index.m3u";
 let channels = [];
+let filteredChannels = [];
+let currentChannelIndex = -1;
 let activeCategory = "TODOS";
 let hls = null;
+let osdTimeout = null;
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -243,7 +254,6 @@ function loadPlaylist(text){
   buildCategories();
   renderGrid();
 
-  // GARANTE QUE O CONTROLE FIQUE NO PRIMEIRA CANAL E NÃO NA BUSCA
   setTimeout(() => {
     const firstCard = document.querySelector('.chan-card');
     if(firstCard) firstCard.focus();
@@ -268,33 +278,80 @@ function selectCategory(cat, el){
 }
 
 function renderGrid(){
+  const search = document.getElementById('searchInput').value.trim().toLowerCase();
+  filteredChannels = channels;
+
+  if(activeCategory !== 'TODOS'){
+    filteredChannels = filteredChannels.filter(c => c.group === activeCategory);
+  }
+  if(search){
+    filteredChannels = filteredChannels.filter(c => c.name.toLowerCase().includes(search));
+  }
+
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
 
-  const capped = channels.slice(0, 300);
-  capped.forEach((c) => {
+  const capped = filteredChannels.slice(0, 300);
+  capped.forEach((c, idx) => {
     const card = document.createElement('div');
     card.className = 'chan-card';
-    card.tabIndex = 0; // Torna focável pelo controle
+    card.tabIndex = 0;
     card.innerHTML = `
       <div class="chan-logo-box">
         ${c.logo ? `<img src="${c.logo}" loading="lazy" onerror="this.remove()">` : ''}
       </div>
       <div class="chan-name">${c.name}</div>
     `;
-    card.onclick = () => playChannel(c);
+    card.onclick = () => playChannel(idx);
     card.addEventListener('keydown', (e) => {
-      if(e.key === 'Enter' || e.keyCode === 13) playChannel(c);
+      if(e.key === 'Enter' || e.keyCode === 13) playChannel(idx);
     });
     grid.appendChild(card);
   });
 }
 
+// BUSCA FUNCIONAL NO CONTROLE
+const searchInput = document.getElementById('searchInput');
+searchInput.addEventListener('input', renderGrid);
+searchInput.addEventListener('keydown', (e) => {
+  // Ao apertar Enter na busca, filtra e foca no primeiro canal encontrado
+  if(e.key === 'Enter' || e.keyCode === 13) {
+    e.preventDefault();
+    renderGrid();
+    searchInput.blur();
+    setTimeout(() => {
+      const firstCard = document.querySelector('.chan-card');
+      if(firstCard) firstCard.focus();
+    }, 100);
+  }
+  // Seta para Baixo no campo de busca move o foco para o primeiro canal
+  if(e.key === 'ArrowDown' || e.keyCode === 40) {
+    e.preventDefault();
+    searchInput.blur();
+    const firstCard = document.querySelector('.chan-card');
+    if(firstCard) firstCard.focus();
+  }
+});
+
 const overlay = document.getElementById('playerOverlay');
 const video = document.getElementById('video');
+const osd = document.getElementById('playerOsd');
 
-function playChannel(c){
+function showOsd(text){
+  osd.textContent = text;
+  osd.style.display = 'block';
+  if(osdTimeout) clearTimeout(osdTimeout);
+  osdTimeout = setTimeout(() => { osd.style.display = 'none'; }, 3000);
+}
+
+function playChannel(index){
+  if(index < 0 || index >= filteredChannels.length) return;
+  currentChannelIndex = index;
+  const c = filteredChannels[currentChannelIndex];
+
   overlay.classList.add('active');
+  showOsd(`📺 ${c.name}`);
+
   if(hls){ hls.destroy(); hls = null; }
 
   if(c.url.includes('.m3u8') && window.Hls && Hls.isSupported()){
@@ -312,18 +369,51 @@ function closePlayer(){
   overlay.classList.remove('active');
   if(hls){ hls.destroy(); hls = null; }
   video.pause();
+  video.removeAttribute('src');
   
-  // Retorna o foco ao primeiro canal
-  const firstCard = document.querySelector('.chan-card');
-  if(firstCard) firstCard.focus();
+  setTimeout(() => {
+    const cards = document.querySelectorAll('.chan-card');
+    if(cards[currentChannelIndex]) {
+      cards[currentChannelIndex].focus();
+    } else if(cards[0]) {
+      cards[0].focus();
+    }
+  }, 100);
 }
 
-// CAPTURA DO BOTÃO VOLTAR DO CONTROLE REMOTO
+// CONTROLE REMOTO GLOBAL
 document.addEventListener('keydown', (e) => {
-  // Tecla Voltar do controle (Android Back / Escape / Backspace)
-  if (e.key === 'Backspace' || e.key === 'Escape' || e.keyCode === 27 || e.keyCode === 4) {
-    if (overlay.classList.contains('active')) {
+  const code = e.keyCode || e.which;
+  const isPlayerActive = overlay.classList.contains('active');
+
+  // 1. MUDAR CANAL NO PLAYER COM SETAS CIMA E BAIXO
+  if (isPlayerActive) {
+    if (e.key === 'ArrowUp' || code === 38 || code === 19) { // Cima
       e.preventDefault();
+      if (currentChannelIndex > 0) {
+        playChannel(currentChannelIndex - 1);
+      } else {
+        playChannel(filteredChannels.length - 1); // Volta pro último
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown' || code === 40 || code === 20) { // Baixo
+      e.preventDefault();
+      if (currentChannelIndex < filteredChannels.length - 1) {
+        playChannel(currentChannelIndex + 1);
+      } else {
+        playChannel(0); // Volta pro primeiro
+      }
+      return;
+    }
+  }
+
+  // 2. BOTÃO VOLTAR DO CONTROLE REMOTO (Evita fechar o App na TV)
+  // Teclas comuns de Voltar em TVs: Android Back (4/27), Tizen/WebOS (10009/461), Backspace/Esc
+  if (code === 4 || code === 27 || code === 8 || code === 10009 || code === 461 || e.key === 'Backspace' || e.key === 'Escape') {
+    if (isPlayerActive) {
+      e.preventDefault();
+      e.stopPropagation();
       closePlayer();
     }
   }
