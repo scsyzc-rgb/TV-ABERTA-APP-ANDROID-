@@ -239,7 +239,9 @@ function parseM3U(text){
       };
     } else if(!line.startsWith('#') && current){
       current.url = line;
-      result.push(current);
+      if (current.url.startsWith('http')) {
+        result.push(current);
+      }
       current = null;
     }
   }
@@ -314,7 +316,6 @@ function renderGrid(){
 const searchInput = document.getElementById('searchInput');
 searchInput.addEventListener('input', renderGrid);
 searchInput.addEventListener('keydown', (e) => {
-  // Ao apertar Enter na busca, filtra e foca no primeiro canal encontrado
   if(e.key === 'Enter' || e.keyCode === 13) {
     e.preventDefault();
     renderGrid();
@@ -324,7 +325,6 @@ searchInput.addEventListener('keydown', (e) => {
       if(firstCard) firstCard.focus();
     }, 100);
   }
-  // Seta para Baixo no campo de busca move o foco para o primeiro canal
   if(e.key === 'ArrowDown' || e.keyCode === 40) {
     e.preventDefault();
     searchInput.blur();
@@ -354,14 +354,32 @@ function playChannel(index){
 
   if(hls){ hls.destroy(); hls = null; }
 
+  let errorTimeout = setTimeout(() => {
+    showOsd(`⚠️ Canal Off: ${c.name}`);
+  }, 5000);
+
   if(c.url.includes('.m3u8') && window.Hls && Hls.isSupported()){
-    hls = new Hls();
+    hls = new Hls({ manifestLoadingTimeOut: 5000 });
     hls.loadSource(c.url);
     hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(()=>{}));
+    
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      clearTimeout(errorTimeout);
+      video.play().catch(()=>{});
+    });
+
+    hls.on(Hls.Events.ERROR, (event, data) => {
+      if (data.fatal) {
+        clearTimeout(errorTimeout);
+        showOsd(`❌ Fora do ar: ${c.name}`);
+      }
+    });
   } else {
     video.src = c.url;
-    video.play().catch(()=>{});
+    video.play().then(() => clearTimeout(errorTimeout)).catch(()=>{
+      clearTimeout(errorTimeout);
+      showOsd(`❌ Fora do ar: ${c.name}`);
+    });
   }
 }
 
@@ -386,30 +404,27 @@ document.addEventListener('keydown', (e) => {
   const code = e.keyCode || e.which;
   const isPlayerActive = overlay.classList.contains('active');
 
-  // 1. MUDAR CANAL NO PLAYER COM SETAS CIMA E BAIXO
   if (isPlayerActive) {
-    if (e.key === 'ArrowUp' || code === 38 || code === 19) { // Cima
+    if (e.key === 'ArrowUp' || code === 38 || code === 19) {
       e.preventDefault();
       if (currentChannelIndex > 0) {
         playChannel(currentChannelIndex - 1);
       } else {
-        playChannel(filteredChannels.length - 1); // Volta pro último
+        playChannel(filteredChannels.length - 1);
       }
       return;
     }
-    if (e.key === 'ArrowDown' || code === 40 || code === 20) { // Baixo
+    if (e.key === 'ArrowDown' || code === 40 || code === 20) {
       e.preventDefault();
       if (currentChannelIndex < filteredChannels.length - 1) {
         playChannel(currentChannelIndex + 1);
       } else {
-        playChannel(0); // Volta pro primeiro
+        playChannel(0);
       }
       return;
     }
   }
 
-  // 2. BOTÃO VOLTAR DO CONTROLE REMOTO (Evita fechar o App na TV)
-  // Teclas comuns de Voltar em TVs: Android Back (4/27), Tizen/WebOS (10009/461), Backspace/Esc
   if (code === 4 || code === 27 || code === 8 || code === 10009 || code === 461 || e.key === 'Backspace' || e.key === 'Escape') {
     if (isPlayerActive) {
       e.preventDefault();
